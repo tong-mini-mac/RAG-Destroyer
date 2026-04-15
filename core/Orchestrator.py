@@ -16,8 +16,12 @@ class RAGOrchestrator:
     def generate_keywords(self, query):
         """AI Call 1: Strictly generates keywords from the command to save API costs."""
         system_instruction = """
-        You are the 'RAG-Destroyer Keyword Swarm'.
-        Convert the user command into 3-4 professional search keywords (English).
+        You are the 'RAG-Destroyer Semantic Swarm Engine'.
+        Your goal is to ensure high RECALL for a deterministic search.
+        1. Analyze the user query.
+        2. Generate 3-4 professional search keywords (English).
+        3. CRITICAL: Include semantic variations or synonyms if the term is ambiguous in corporate language.
+           (Example: 'Salary' -> ['Salary', 'Remuneration', 'Compensation', 'Pay Scale']).
         Format: Return a JSON list of strings only.
         """
         raw = self.ai.call(query, system_instruction=system_instruction, json_mode=True)

@@ -9,14 +9,23 @@ ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Load Environment
 def load_env_config():
-    env_path = os.path.join(ROOT_PATH, "config", ".env")
-    load_dotenv(env_path)
+    """Loads industrial configuration with support for centralized workspace secrets."""
+    # 1. Load project-local .env
+    local_env = os.path.join(ROOT_PATH, "config", ".env")
+    if os.path.exists(local_env):
+        load_dotenv(local_env)
+        
+    # 2. Load centralized workspace .env (Parent Directory: MyClaw)
+    central_env = os.path.abspath(os.path.join(ROOT_PATH, "..", ".env"))
+    if os.path.exists(central_env):
+        load_dotenv(central_env, override=True) # Centralized vault can override locals for industrial consistency
     
     return {
         "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
         "GEMINI_MODEL": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
+        "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN"),
         
         # Paths - Default to project relative but allow override
         "RAW_DATA_PATH": os.getenv("RAW_DATA_PATH", os.path.join(ROOT_PATH, "raw_data")),
