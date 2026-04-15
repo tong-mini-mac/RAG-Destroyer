@@ -1,0 +1,10 @@
+knowledge/
+raw_data/
+logs/*.json
+industrial_evidence/logs/*.json
+output/
+config/.env
+__pycache__/
+*.pyc
+.DS_Store
+.monitor.pid

@@ -1,0 +1,9 @@
+google-genai
+python-dotenv
+python-frontmatter
+streamlit
+pandas
+pypandoc
+python-docx
+openpyxl
+requests
