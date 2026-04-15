@@ -17,6 +17,21 @@ While the AI industry rushed to dump enterprise data into complex, multi-million
 
 ---
 
+## 🧪 Proving the Theory: A Manifesto for GURU in the Box
+**This project was built to prove a theory, not to be sold as a commercial product.**
+
+The goal of **RAG-Destroyer** is to serve as a **Proof of Concept (PoC)** to demonstrate a singular truth: *A deterministic, Zero-Vector-DB architecture using the "Subset Theory" can eliminate Data Leakage and Hallucination in high-security environments.*
+
+I am not looking for profit or a commercial software license. My only objective was to prove that this architectural approach—the "Lom RAG" philosophy—is the correct foundation for enterprise-grade AI security.
+
+**The theory is proven. The foundation is here.**
+
+This repository is an open-source research artifact. You are free to take this architecture, adapt it, integrate it with your enterprise's complex systems (Active Directory, OAuth, etc.), and scale it for your own needs. 
+
+*The framework is public. The proof is undeniable. The implementation is now yours.*
+
+---
+
 ## 💣 The Vector DB Delusion
 The Enterprise AI industry is lying to you. We are forcing semantic search into enterprise environments where **precision, access control (RBAC), and auditability** matter more than "finding similar meanings."
 
