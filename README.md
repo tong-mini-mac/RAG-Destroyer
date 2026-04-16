@@ -108,3 +108,4 @@ streamlit run app.py
 
 **Built with respect for the craft.**
 *Architected by RAG Slayer in Bangkok, Thailand.* 🇹🇭
+PS. https://www.linkedin.com/in/vittaya-lertbuiasin-13b258149/
