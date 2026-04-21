@@ -255,6 +255,9 @@ streamlit run app.py
 
 This keeps sensitive real-world vault data out of GitHub while still giving evaluators a working demo path.
 
+**Mockup knowledge package (Google Drive):**  
+[knowledge_mockup_v1.zip](https://drive.google.com/file/d/1yOg5Refv1Yao-N_IXnqnCR2IRpSRffYp/view?usp=sharing)
+
 **1. Install the codebase**
 
 **Option A — Docker (recommended)**
