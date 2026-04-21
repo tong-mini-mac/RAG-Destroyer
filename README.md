@@ -225,6 +225,36 @@ With Streamlit running, the **background monitor** watches `raw_data/`. **`DataR
 
 Do these in order for the PoC.
 
+### Quick demo in 30 seconds (for fresh clones)
+
+If you only want to verify that SAG works end-to-end with demo data:
+
+1. Clone and enter the project.
+2. Copy `demo_knowledge/` to `knowledge/`.
+3. Install dependencies and run Streamlit.
+
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/tong-mini-mac/SAG.git
+cd SAG
+Copy-Item -Recurse .\demo_knowledge .\knowledge
+python -m pip install -r requirements.txt
+streamlit run app.py
+```
+
+**macOS / Linux:**
+
+```bash
+git clone https://github.com/tong-mini-mac/SAG.git
+cd SAG
+cp -R demo_knowledge knowledge
+python3 -m pip install -r requirements.txt
+streamlit run app.py
+```
+
+This keeps sensitive real-world vault data out of GitHub while still giving evaluators a working demo path.
+
 **1. Install the codebase**
 
 **Option A — Docker (recommended)**
