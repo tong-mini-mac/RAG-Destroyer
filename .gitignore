@@ -9,3 +9,5 @@ __pycache__/
 .DS_Store
 .monitor.pid
 lk,ki5*.zip
+*.zip
+*.mp4

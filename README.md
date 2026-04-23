@@ -1,6 +1,6 @@
 <div align="center">
   <img src="docs/img/architecture.png" width="100%" alt="SAG: Obsidian Graph x Subset Architecture">
-  <h1>🏛️ SAG (Subset-Augmented Generation): The Zero-Vector-DB Architecture</h1>
+  <h1>🏛️ SAG (Subset-Augmented Generation): Deterministic RBAC-first Retrieval</h1>
   <p><b>Deterministic Knowledge Retrieval for the LLM OS Era</b></p>
   <p><i>Repository documentation is maintained in English.</i></p>
 </div>
@@ -12,59 +12,105 @@
 ### 💡 Inspiration: Standing on the Shoulders of Giants
 This project exists because of **Andrej Karpathy's** brilliant vision of the "LLM OS". He proposed that an LLM shouldn't just be a chatbot, but the core processor of a new operating system—capable of reading files, managing memory, and respecting user permissions natively.
 
-While the AI industry rushed to dump enterprise data into complex, multi-million dollar, black-box Vector Databases, they forgot the fundamental requirement of any Operating System: **A deterministic, permission-aware File System.**
+As AI architectures evolved, many teams prioritized semantic retrieval first. SAG focuses on a complementary requirement for enterprise systems: **a deterministic, permission-aware file and policy layer**.
 
 **SAG (Subset-Augmented Generation)** is my practical implementation of that missing layer.
 
 ---
 
-## 🧪 Proving the Theory: A Manifesto for GURU in the Box
-**This project was built to prove a theory, not to be sold as a commercial product.**
+## Table of Contents
 
-The goal of **SAG (Subset-Augmented Generation)** is to serve as a **Proof of Concept (PoC)** to demonstrate a singular truth: *A deterministic, Zero-Vector-DB architecture using the "Subset Theory" can eliminate data leakage and hallucination in high-security environments.*
-
-I am not looking for profit or a commercial software license. My only objective was to prove that this architectural approach—the anti-vector-overkill philosophy described above—is the correct foundation for enterprise-grade AI security.
-
-**The theory is proven. The foundation is here.**
-
-This repository is provided as an open-source foundation. You are free to take this architecture, adapt it, integrate it with your enterprise's complex RBAC (Active Directory, OAuth, etc.), and scale it for your own needs.
-
-*The framework is public. The proof is undeniable. The implementation is now yours.*
+- [What V2 solves](#what-v2-solves)
+- [Architecture flow (at a glance)](#architecture-flow-at-a-glance)
+- [5-minute evaluator demo](#five-minute-evaluator-demo)
+- [Data privacy, knowledge, and GitHub boundaries](#data-privacy-knowledge-and-what-belongs-on-github)
+- [Quick start and operations](#quick-start-and-operations)
+- [Organization model and RBAC subset rules](#organization-model-silos-roles-ceo--operational-staff-and-cross-merge)
 
 ---
 
-## 💣 The Vector DB Delusion
-The Enterprise AI industry is lying to you. We are forcing semantic search into enterprise environments where **precision, access control (RBAC), and auditability** matter more than "finding similar meanings."
+## 🧪 Design Objective
+**SAG is a practical proof-of-concept for deterministic, policy-aware retrieval in high-security environments.**
 
-Vector DBs for internal documents are a nightmare:
-1. **They hallucinate (Semantic Drift):** Searching for "Maternity Leave" might pull "Sick Leave" because the math thinks they are close.
-2. **RBAC is an afterthought:** Telling a vector space "Don't let the intern see the CEO's salary" is computationally expensive and flawed.
-3. **They are overpriced:** You are paying cloud providers for something your local file system can do better.
+This repository is provided as an open-source foundation. You are free to take this architecture, adapt it, integrate it with your enterprise's complex RBAC (Active Directory, OAuth, etc.), and scale it for your own needs.
+
+*The framework is public and intended as a practical starting point.*
+
+---
+
+## ⚖️ Retrieval Strategy Context
+For many enterprise document workloads, **precision, access control (RBAC), and auditability** are first-order requirements.
+This repository provides a deterministic baseline that can be combined with other retrieval strategies when needed.
+
+SAG V2 intentionally starts with deterministic subset retrieval so behavior is easier to reason about and verify:
+1. **Lower semantic drift risk in retrieval:** strict metadata/keyword gating limits loosely-related matches.
+2. **RBAC-first execution:** policy filters run before synthesis.
+3. **Operational clarity:** teams can inspect and audit source selection directly.
 
 ## 🧠 Enter "The Subset Theory"
-I killed the Vector DB and replaced it with **The Subset Theory**.
+SAG V2 prioritizes **The Subset Theory** as the baseline retrieval strategy.
 
 Instead of converting your company's knowledge into billions of unreadable numbers, we flip the architecture:
 
-1. **Deterministic Scouting:** We use high-speed, multi-threaded worker bots to aggressively filter and extract the exact **"Subset"** of relevant data using deterministic metadata, tags, and keyword swarms over an Obsidian (Markdown) vault.
+1. **Deterministic Scouting:** We use high-speed, multi-threaded worker bots to filter and extract the most relevant **"Subset"** of data using deterministic metadata, tags, and keyword swarms over a Markdown vault.
 2. **The LMM as a Synthesizer:** Once the perfect "Subset" is isolated, we feed *only* that pristine data to the Large Multimodal Model (LMM). The LMM's only job is to reason and synthesize the final answer.
 3. **Zero-Trust by Default:** Because the search happens at the OS file-system level, Role-Based Access Control (RBAC) is native. If a user doesn't have OS-level clearance for a folder, the worker bots simply don't see it. Zero data leakage.
 
-## 🛡️ The "Anti-Roast" Shield
-*Before you say it in the Hacker News comments: Yes, I know I just reinvented Keyword Search and Metadata Filtering. And that is EXACTLY the point.*
-
-We got so obsessed with shiny Vector DBs and complex embeddings that we forgot basic software engineering. For 90% of enterprise data, simple deterministic search + LLM reasoning is faster, cheaper, and 100x easier to secure than a black-box vector space. Sometimes, the "dumb" way is the most elegant architecture.
+## 🛡️ Practical Simplicity
+*This architecture favors deterministic techniques (metadata + keyword filtering) before synthesis, with a focus on controllability and auditability.*
 
 ## 🚀 Features
-- **Zero Vector DB:** $0 cost, 0 maintenance.
+- **Deterministic baseline retrieval:** metadata + keyword subset strategy, built for policy control.
 - **100% Native RBAC:** Inherits your organizational silo permissions automatically.
-- **Zero Hallucination Retrieval:** If the deterministic search doesn't find it, it doesn't get synthesized.
+- **Reduced retrieval hallucination risk:** if deterministic search cannot find matching sources, synthesis is constrained accordingly.
 - **Multi-threaded Speed:** Parallel worker agents (optimized swarm) scout the vault in milliseconds.
 - **Industrial Resilience:** Integrated safety cut (circuit breaker) and industrial operational watchdog.
 - **Demo Audit Layer:** AI-on-AI QC judging and performance dashboard (built for continuous improvement).
 - **Layered cross-silo access for VPs:** Department Heads can receive *merged* silo search scope with per-file policies (whitelist / deny / substring rules) — see **§ Organization model** below.
 - **Identity-first question drafting:** GURU shows a role-scoped document preview table before prompting, so users can draft questions from only the documents they are authorized to see.
 - **Ops alert relay:** Optional LINE and Discord webhook notifications for critical runtime/API failures.
+
+## 🎯 What V2 solves
+
+V2 focuses on enterprise-safe retrieval with measurable operating behavior:
+
+- **Deterministic retrieval:** source inclusion is based on explicit metadata, folder scopes, and policy rules.
+- **RBAC-first gating:** role + active department + per-file rules are enforced before synthesis.
+- **Auditable response path:** users can inspect authorized source files used in answer generation.
+- **Operational repeatability:** runbook-driven startup, recovery, and cache/index rebuild flow.
+
+## 🔁 Architecture flow (at a glance)
+
+```mermaid
+flowchart LR
+    U[User Query] --> I[Identity Context: role + active department]
+    I --> P[Policy Gate: RBAC + audience + per-file rules]
+    P --> R[Deterministic Retrieval: subset scan]
+    R --> S[Best Subset Selection]
+    S --> L[LLM Synthesis on authorized context]
+    L --> A[Answer + cited authorized sources]
+```
+
+## ⚡ 5-minute evaluator demo
+
+Use this path when you need to show value quickly:
+
+1. Start app with demo data (`demo_knowledge` copied to `knowledge`).
+2. Open `Start`, set provider + API key.
+3. In `GURU Assistant`, select:
+   - `Operational Staff` in one silo, ask a policy question.
+   - `Department Head` in the same silo, ask the same question.
+4. Compare `Documents available to this identity` and answer citations.
+5. Open `View Authorized Sources` to confirm deterministic, role-scoped retrieval.
+
+Expected demo outcome: stronger roles see broader authorized context while staff remains silo-constrained.
+
+## 📏 V2 success metrics (recommended)
+
+- **Policy violation count:** 0 unauthorized source exposures in role regression tests.
+- **Subset precision:** high share of returned sources belong to role-authorized scope.
+- **Latency:** track p50/p95 from query input to final answer.
+- **Operational reliability:** successful startup and index rebuild in local + Docker paths.
 
 ---
 
@@ -194,6 +240,11 @@ Each step **appends** a silo folder name when the viewer’s active department i
 ## 🛠️ Quick start & operations
 
 **In this section:** (1) two-folder layout & subset rules → (2) first-time steps 1–6 → (3) production checklist → (4) env/CLI notes → (5) tech reference.
+
+Operational references:
+- Runbook: `docs/RUNBOOK.md`
+- Security policy: `SECURITY.md`
+- Contribution guide: `CONTRIBUTING.md`
 
 ---
 
@@ -366,6 +417,7 @@ You do **not** need `config/.env` to open the UI—see **§2 step 3** above for 
 
 - Copy `config/.env.example` → `config/.env` and fill variables, **or** use **Save keys to config/.env on this PC** in the app (`config/.env` is gitignored).
 - For **CLI / scripts** without Streamlit, set `SAG_PRIMARY_PROVIDER` to `google`, `openai`, or `anthropic` (same values the in-app save button writes) so the correct API key is read.
+- Knowledge source backend is pluggable via `KNOWLEDGE_SOURCE_BACKEND` (default: `localfs` for Obsidian/Markdown folders).
 - Optional notifications:
   - `LINE_NOTIFY_TOKEN=...`
   - `DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...`
