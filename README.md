@@ -20,23 +20,17 @@ As AI architectures evolved, many teams prioritized semantic retrieval first. SA
 
 ## Table of Contents
 
-- [What V2 solves](#-what-v2-solves)
-- [5-minute evaluator demo](#-5-minute-evaluator-demo)
-- [Architecture flow (at a glance)](#-architecture-flow-at-a-glance)
-- [Data privacy, knowledge, and GitHub boundaries](#-data-privacy-knowledge-and-what-belongs-on-github)
-- [Quick start and operations](#-quick-start--operations)
-- [Organization model and RBAC subset rules](#-organization-model-silos-roles-ceo--operational-staff-and-cross-merge)
+- [What V2 solves](#what-v2-solves)
+- [Architecture flow (at a glance)](#architecture-flow-at-a-glance)
+- [5-minute evaluator demo](#five-minute-evaluator-demo)
+- [Data privacy, knowledge, and GitHub boundaries](#data-privacy-knowledge-and-what-belongs-on-github)
+- [Quick start and operations](#quick-start-and-operations)
+- [Organization model and RBAC subset rules](#organization-model-silos-roles-ceo--operational-staff-and-cross-merge)
 
 ---
 
 ## 🧪 Design Objective
-**This project was built to prove a theory, not to be sold as a commercial product.**
-
-The goal of **SAG (Subset-Augmented Generation)** is to serve as a **Proof of Concept (PoC)** for deterministic, policy-aware retrieval in high-security environments.
-
-The objective is to validate that deterministic subset filtering + explicit RBAC controls provide strong enterprise safety and auditability.
-
-**The foundation is here and ready to evolve.**
+**SAG is a practical proof-of-concept for deterministic, policy-aware retrieval in high-security environments.**
 
 This repository is provided as an open-source foundation. You are free to take this architecture, adapt it, integrate it with your enterprise's complex RBAC (Active Directory, OAuth, etc.), and scale it for your own needs.
 
@@ -46,7 +40,7 @@ This repository is provided as an open-source foundation. You are free to take t
 
 ## ⚖️ Retrieval Strategy Context
 For many enterprise document workloads, **precision, access control (RBAC), and auditability** are first-order requirements.
-This repository documents a deterministic baseline that can later be combined with other retrieval strategies when needed.
+This repository provides a deterministic baseline that can be combined with other retrieval strategies when needed.
 
 SAG V2 intentionally starts with deterministic subset retrieval so behavior is easier to reason about and verify:
 1. **Lower semantic drift risk in retrieval:** strict metadata/keyword gating limits loosely-related matches.
@@ -85,6 +79,18 @@ V2 focuses on enterprise-safe retrieval with measurable operating behavior:
 - **Auditable response path:** users can inspect authorized source files used in answer generation.
 - **Operational repeatability:** runbook-driven startup, recovery, and cache/index rebuild flow.
 
+## 🔁 Architecture flow (at a glance)
+
+```mermaid
+flowchart LR
+    U[User Query] --> I[Identity Context: role + active department]
+    I --> P[Policy Gate: RBAC + audience + per-file rules]
+    P --> R[Deterministic Retrieval: subset scan]
+    R --> S[Best Subset Selection]
+    S --> L[LLM Synthesis on authorized context]
+    L --> A[Answer + cited authorized sources]
+```
+
 ## ⚡ 5-minute evaluator demo
 
 Use this path when you need to show value quickly:
@@ -105,18 +111,6 @@ Expected demo outcome: stronger roles see broader authorized context while staff
 - **Subset precision:** high share of returned sources belong to role-authorized scope.
 - **Latency:** track p50/p95 from query input to final answer.
 - **Operational reliability:** successful startup and index rebuild in local + Docker paths.
-
-## 🔁 Architecture flow (at a glance)
-
-```mermaid
-flowchart LR
-    U[User Query] --> I[Identity Context: role + active department]
-    I --> P[Policy Gate: RBAC + audience + per-file rules]
-    P --> R[Deterministic Retrieval: subset scan]
-    R --> S[Best Subset Selection]
-    S --> L[LLM Synthesis on authorized context]
-    L --> A[Answer + cited authorized sources]
-```
 
 ---
 
