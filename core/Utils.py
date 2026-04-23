@@ -29,6 +29,7 @@ def load_env_config():
         "OPENAI_MODEL": os.getenv("OPENAI_MODEL", "gpt-4o"),
         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
         "ANTHROPIC_MODEL": os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20240620"),
+        "KNOWLEDGE_SOURCE_BACKEND": os.getenv("KNOWLEDGE_SOURCE_BACKEND", "localfs"),
         "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN"),
         
         # Paths - Default to project relative but allow override
