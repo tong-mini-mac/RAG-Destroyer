@@ -1,8 +1,11 @@
 import concurrent.futures
 import json
+import os
 import re
 from .Utils import LLMInterface, extract_json, CONFIG, NotificationManager
 from .SearchWorker import SearchWorker
+from .HybridSearch import HybridSearchEngine
+from .VectorIndex import VectorIndex
 import time
 
 # Words too generic for substring search on short corporate summaries
@@ -28,14 +31,60 @@ def _fallback_keywords_from_query(query: str) -> list[str]:
     return out
 
 
+def _load_domain_synonyms() -> dict[str, list[str]]:
+    path = os.path.join(os.path.dirname(__file__), "..", "config", "domain_synonyms.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        out: dict[str, list[str]] = {}
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                if not isinstance(k, str) or not isinstance(v, list):
+                    continue
+                vals = [str(x).strip() for x in v if isinstance(x, str) and x.strip()]
+                if vals:
+                    out[k.strip().lower()] = vals
+        return out
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return {}
+
+
+def _expand_keywords_with_synonyms(keywords: list[str], synonym_map: dict[str, list[str]]) -> list[str]:
+    merged: list[str] = []
+    for k in keywords:
+        if not isinstance(k, str):
+            continue
+        ks = k.strip()
+        if not ks:
+            continue
+        if ks.lower() not in [x.lower() for x in merged]:
+            merged.append(ks)
+        for syn in synonym_map.get(ks.lower(), []):
+            if syn.lower() not in [x.lower() for x in merged]:
+                merged.append(syn)
+    return merged
+
+
 class RAGOrchestrator:
     def __init__(self, vault_path=None):
         self.vault_path = vault_path or CONFIG["CLEANED_DATA_PATH"]
         self.ai = LLMInterface.get_client()
         self.worker = SearchWorker(self.vault_path)
+        self.vector_index = VectorIndex(self.vault_path)
+        self.hybrid = HybridSearchEngine(
+            alpha=CONFIG.get("SAG_HYBRID_ALPHA", 0.65),
+            top_k=CONFIG.get("SAG_HYBRID_TOP_K", 5),
+        )
+        self.hybrid_enabled = bool(CONFIG.get("SAG_ENABLE_HYBRID", False))
+        self.hybrid_strategy = str(CONFIG.get("SAG_HYBRID_STRATEGY", "dynamic_rerank")).strip().lower()
+        self.enable_vector_index = bool(CONFIG.get("SAG_ENABLE_VECTOR_INDEX", False))
+        self.domain_synonyms = _load_domain_synonyms()
         self.notifier = NotificationManager()
         self.max_bots = 2 # Industrial Sweet Spot for API Stability
         self.failure_count = 0
+        self.trace_path = os.path.join(os.path.dirname(__file__), "..", "logs", "retrieval_trace.jsonl")
 
     def generate_keywords(self, query):
         """AI Call 1: Strictly generates keywords from the command to save API costs."""
@@ -197,6 +246,7 @@ class RAGOrchestrator:
         """Main Pipeline: AI (Keywords) -> Code (Parallel Search/Subset) -> AI (GURU Synthesis)."""
         # Refresh client in case of provider switch in UI
         self.ai = LLMInterface.get_client()
+        t_start = time.perf_counter()
         
         # Determine subsets based on security context (Individual or Department)
         if isinstance(authorized_scope, list) or authorized_scope == "ALL":
@@ -209,6 +259,7 @@ class RAGOrchestrator:
         print(f"🧠 GURU processing: '{query}' within {scope_name}")
         
         # 1. AI Call 1: Generate Keywords — merge with query tokens for substring recall
+        t_kw0 = time.perf_counter()
         keywords = self.generate_keywords(query)
         merged = []
         for k in keywords + _fallback_keywords_from_query(query):
@@ -216,17 +267,43 @@ class RAGOrchestrator:
                 ks = k.strip()
                 if ks.lower() not in [x.lower() for x in merged]:
                     merged.append(ks)
-        keywords = merged[:14]
+        keywords = _expand_keywords_with_synonyms(merged, self.domain_synonyms)[:20]
+        t_kw1 = time.perf_counter()
 
         print(f"🔑 Search Strategy: {keywords}")
         
         # 2. Local Code Execution: Parallel Search (Silo-Restricted)
+        t_search0 = time.perf_counter()
         search_results = self.execute_search(
             keywords, actual_subsets, viewer_role, viewer_active_department
         )
+        vector_hits = []
+        use_vector_stage = (
+            self.hybrid_enabled
+            and self.enable_vector_index
+            and self.hybrid_strategy in ("vector_plus_rerank", "vector", "hybrid_vector")
+        )
+        if use_vector_stage:
+            vector_hits = self.vector_index.query(
+                query,
+                actual_subsets,
+                viewer_role,
+                viewer_active_department,
+            )
+            if vector_hits:
+                search_results.append({"keyword": "__vector__", "hits": vector_hits})
+        t_search1 = time.perf_counter()
         
         # 3. Local Code Execution: Expert Subset Selection
-        best_context = self.calculate_best_subset(search_results)
+        t_rr0 = time.perf_counter()
+        retrieval_mode = "hybrid_v3_dynamic_rerank" if self.hybrid_enabled else "deterministic_v2"
+        if use_vector_stage:
+            retrieval_mode = "hybrid_v3_vector_plus_rerank"
+        if self.hybrid_enabled:
+            best_context = self.hybrid.rerank(query, search_results)
+        else:
+            best_context = self.calculate_best_subset(search_results)
+        t_rr1 = time.perf_counter()
         # Thai / multilingual queries: first pass may return nothing — broaden English keywords once
         if not best_context:
             retry_kw = self.generate_keywords_multilingual_retry(query)
@@ -236,16 +313,33 @@ class RAGOrchestrator:
                     ks = k.strip()
                     if ks.lower() not in [x.lower() for x in merged2]:
                         merged2.append(ks)
-            keywords = merged2[:18]
+            keywords = _expand_keywords_with_synonyms(merged2, self.domain_synonyms)[:24]
             print(f"🔁 Retry search keywords: {keywords}")
+            t_search0 = time.perf_counter()
             search_results = self.execute_search(
                 keywords, actual_subsets, viewer_role, viewer_active_department
             )
-            best_context = self.calculate_best_subset(search_results)
+            if use_vector_stage:
+                vector_hits = self.vector_index.query(
+                    query,
+                    actual_subsets,
+                    viewer_role,
+                    viewer_active_department,
+                )
+                if vector_hits:
+                    search_results.append({"keyword": "__vector__", "hits": vector_hits})
+            t_search1 = time.perf_counter()
+            t_rr0 = time.perf_counter()
+            if self.hybrid_enabled:
+                best_context = self.hybrid.rerank(query, search_results)
+            else:
+                best_context = self.calculate_best_subset(search_results)
+            t_rr1 = time.perf_counter()
 
         print(f"📊 GURU found {len(best_context)} key references.")
         
         # 4. AI Call 2: Final GURU Expert Synthesis
+        t_syn0 = time.perf_counter()
         try:
             report = self.final_synthesis(query, best_context, scope_name)
             self.failure_count = 0 # Reset on success
@@ -260,10 +354,40 @@ class RAGOrchestrator:
                     "guru_scope": scope_name
                 }
             raise e
+        t_syn1 = time.perf_counter()
+        t_end = time.perf_counter()
+        self._write_retrieval_trace(
+            {
+                "query": query,
+                "retrieval_mode": retrieval_mode,
+                "scope_name": scope_name,
+                "viewer_role": viewer_role,
+                "viewer_active_department": viewer_active_department,
+                "keywords_count": len(keywords),
+                "vector_hits": len(vector_hits),
+                "sources_count": len(best_context),
+                "timing_ms": {
+                    "keyword_gen": round((t_kw1 - t_kw0) * 1000, 3),
+                    "lexical_search": round((t_search1 - t_search0) * 1000, 3),
+                    "rerank": round((t_rr1 - t_rr0) * 1000, 3),
+                    "synthesis": round((t_syn1 - t_syn0) * 1000, 3),
+                    "total": round((t_end - t_start) * 1000, 3),
+                },
+            }
+        )
         
         return {
             "answer": report,
             "sources": best_context,
             "keywords": keywords,
-            "guru_scope": scope_name
+            "guru_scope": scope_name,
+            "retrieval_mode": retrieval_mode,
+            "vector_hits": len(vector_hits),
         }
+    def _write_retrieval_trace(self, payload: dict) -> None:
+        os.makedirs(os.path.dirname(self.trace_path), exist_ok=True)
+        line = dict(payload)
+        line["ts"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(self.trace_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+

@@ -30,6 +30,17 @@ def load_env_config():
         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
         "ANTHROPIC_MODEL": os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20240620"),
         "KNOWLEDGE_SOURCE_BACKEND": os.getenv("KNOWLEDGE_SOURCE_BACKEND", "localfs"),
+        "SAG_ENABLE_HYBRID": os.getenv("SAG_ENABLE_HYBRID", "false").strip().lower() in ("1", "true", "yes", "on"),
+        "SAG_HYBRID_TOP_K": int(os.getenv("SAG_HYBRID_TOP_K", "5")),
+        "SAG_HYBRID_ALPHA": float(os.getenv("SAG_HYBRID_ALPHA", "0.65")),
+        "SAG_HYBRID_STRATEGY": os.getenv("SAG_HYBRID_STRATEGY", "dynamic_rerank").strip().lower(),
+        "SAG_ENABLE_VECTOR_INDEX": os.getenv("SAG_ENABLE_VECTOR_INDEX", "false").strip().lower() in ("1", "true", "yes", "on"),
+        "SAG_ENABLE_ONNX_EMBEDDING": os.getenv("SAG_ENABLE_ONNX_EMBEDDING", "False").strip(),
+        "SAG_CHUNK_TARGET_CHARS": int(os.getenv("SAG_CHUNK_TARGET_CHARS", "900")),
+        "SAG_CHUNK_MIN_CHARS": int(os.getenv("SAG_CHUNK_MIN_CHARS", "800")),
+        "SAG_CHUNK_MAX_CHARS": int(os.getenv("SAG_CHUNK_MAX_CHARS", "1000")),
+        "SAG_CHUNK_OVERLAP_CHARS": int(os.getenv("SAG_CHUNK_OVERLAP_CHARS", "120")),
+        "SAG_VECTOR_TOP_K": int(os.getenv("SAG_VECTOR_TOP_K", "8")),
         "GITHUB_TOKEN": os.getenv("GITHUB_TOKEN"),
         
         # Paths - Default to project relative but allow override

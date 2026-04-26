@@ -1,4 +1,6 @@
-knowledge/
+knowledge/**/*.md
+knowledge/**/_SEARCH_CACHE.json
+knowledge/**/_MASTER_INDEX.md
 raw_data/
 logs/*.json
 industrial_evidence/logs/*.json
@@ -11,3 +13,6 @@ __pycache__/
 lk,ki5*.zip
 *.zip
 *.mp4
+tmp/
+logs/
+cache/

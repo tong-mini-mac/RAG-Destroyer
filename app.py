@@ -488,6 +488,10 @@ elif page == "🧠 GURU Assistant":
         st.chat_message("user").write(st.session_state.get("last_query", "Previous Request"))
         with st.chat_message("assistant"):
             st.write(res['answer'])
+            st.caption(
+                f"Retrieval mode: `{res.get('retrieval_mode', 'deterministic_v2')}`"
+                f" · vector hits: `{res.get('vector_hits', 0)}`"
+            )
             
             # QC Dual Badge
             qc = res.get('qc', {})
@@ -591,6 +595,46 @@ elif page == "🛠️ System Config":
         CONFIG["CLEANED_DATA_PATH"] = vault_path.strip()
         get_services.clear()
         st.success("Paths updated. Orchestrator & refinery reloaded. Restart Streamlit if the background file watcher should use the new raw folder.")
+        st.rerun()
+
+    st.divider()
+    st.header("🧭 Retrieval architecture")
+    st.caption("Toggle V3 hybrid retrieval safely (V2 deterministic remains default fallback).")
+    hybrid_enabled = st.checkbox(
+        "Enable V3 hybrid retrieval (SAG + RAG rerank)",
+        value=bool(CONFIG.get("SAG_ENABLE_HYBRID", False)),
+    )
+    hybrid_strategy = st.selectbox(
+        "Hybrid strategy",
+        ["dynamic_rerank", "vector_plus_rerank"],
+        index=0 if str(CONFIG.get("SAG_HYBRID_STRATEGY", "dynamic_rerank")).strip().lower() != "vector_plus_rerank" else 1,
+        help="dynamic_rerank = Keyword Swarm -> Subset Lexical -> On-the-fly rerank (recommended).",
+    )
+    enable_vector_index = st.checkbox(
+        "Enable vector index stage (only used for vector_plus_rerank)",
+        value=bool(CONFIG.get("SAG_ENABLE_VECTOR_INDEX", False)),
+    )
+    hybrid_top_k = st.slider(
+        "Hybrid Top-K context docs",
+        min_value=3,
+        max_value=12,
+        value=int(CONFIG.get("SAG_HYBRID_TOP_K", 5)),
+    )
+    hybrid_alpha = st.slider(
+        "Hybrid lexical weight (alpha)",
+        min_value=0.0,
+        max_value=1.0,
+        value=float(CONFIG.get("SAG_HYBRID_ALPHA", 0.65)),
+        step=0.05,
+    )
+    if st.button("💾 Apply retrieval architecture settings"):
+        CONFIG["SAG_ENABLE_HYBRID"] = hybrid_enabled
+        CONFIG["SAG_HYBRID_STRATEGY"] = hybrid_strategy
+        CONFIG["SAG_ENABLE_VECTOR_INDEX"] = enable_vector_index
+        CONFIG["SAG_HYBRID_TOP_K"] = hybrid_top_k
+        CONFIG["SAG_HYBRID_ALPHA"] = hybrid_alpha
+        get_services.clear()
+        st.success("Retrieval settings applied. Orchestrator reloaded.")
         st.rerun()
 
     # 2b. Vault index (search cache)

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="docs/img/architecture.png" width="100%" alt="SAG: Obsidian Graph x Subset Architecture">
   <h1>🏛️ SAG (Subset-Augmented Generation): Deterministic RBAC-first Retrieval</h1>
-  <p><b>Deterministic Knowledge Retrieval for the LLM OS Era</b></p>
+  <p><b>Hybrid Vector + Deterministic Retrieval for the LLM OS Era</b></p>
   <p><i>Repository documentation is maintained in English.</i></p>
 </div>
 
@@ -22,6 +22,10 @@ As AI architectures evolved, many teams prioritized semantic retrieval first. SA
 
 - [What V2 solves](#what-v2-solves)
 - [Architecture flow (at a glance)](#architecture-flow-at-a-glance)
+- [V3 hybrid architecture (SAG + RAG)](#v3-hybrid-architecture-sag--rag)
+- [V3 retrieval mode (recommended)](#v3-retrieval-mode-recommended)
+- [V3 operations and observability](#v3-operations-and-observability)
+- [When to use SAG vs RAG vs Hybrid](#when-to-use-sag-vs-rag-vs-hybrid)
 - [5-minute evaluator demo](#five-minute-evaluator-demo)
 - [Data privacy, knowledge, and GitHub boundaries](#data-privacy-knowledge-and-what-belongs-on-github)
 - [Quick start and operations](#quick-start-and-operations)
@@ -69,6 +73,10 @@ Instead of converting your company's knowledge into billions of unreadable numbe
 - **Layered cross-silo access for VPs:** Department Heads can receive *merged* silo search scope with per-file policies (whitelist / deny / substring rules) — see **§ Organization model** below.
 - **Identity-first question drafting:** GURU shows a role-scoped document preview table before prompting, so users can draft questions from only the documents they are authorized to see.
 - **Ops alert relay:** Optional LINE and Discord webhook notifications for critical runtime/API failures.
+- **V3 Vector pipeline:** `VectorIndex` with token-set cosine similarity (zero-dependency, no external model required) — chunks `.md` files into `knowledge/_vectors/` and searches via cosine similarity.
+- **V3 Vector pipeline (ONNX optional):** Dense embedding support via `all-MiniLM-L6-v2` (`sentence-transformers`) — toggle with `SAG_ENABLE_ONNX_EMBEDDING=true`. Benchmark shows identical accuracy to token-set at 4× RAM cost; default-off.
+- **V3 Phase D.2 — R&C soft-penalty:** 30% score reduction for Risk & Compliance documents when query targets a different department.
+- **V3 Phase F — LLM keyword cache:** Persisted query → keyword mapping eliminates redundant Gemini API calls on repeat queries.
 
 ## 🎯 What V2 solves
 
@@ -85,11 +93,98 @@ V2 focuses on enterprise-safe retrieval with measurable operating behavior:
 flowchart LR
     U[User Query] --> I[Identity Context: role + active department]
     I --> P[Policy Gate: RBAC + audience + per-file rules]
-    P --> R[Deterministic Retrieval: subset scan]
-    R --> S[Best Subset Selection]
+    P --> R[Vector Retrieval: cosine similarity over chunk index]
+    R --> S[Hybrid Rerank: department + phrase boost]
     S --> L[LLM Synthesis on authorized context]
     L --> A[Answer + cited authorized sources]
 ```
+
+## 🧭 V3 hybrid architecture (SAG + RAG)
+
+V3 architecture draft and diagram are available at:
+
+- `docs/ARCHITECTURE_V3.md`
+
+V3 pipeline:
+
+```
+User Query
+  → LLM generate_keywords (Gemini 2.5 Flash)
+  → Keyword dedup + synonym expansion (Phase D.2)
+  → Department anchor/disambiguation
+  → VectorIndex.query()  ← token-set cosine similarity on content chunks
+  → HybridSearch.rerank()  ← department/phrase boost + R&C penalty
+  → Final LLM synthesis
+```
+
+**Key difference from V2:** V3 uses `VectorIndex` as the primary retrieval mechanism (no `.md` lexical scanning). All documents are chunked and stored as token-set vectors in `knowledge/_vectors/`. ONNX dense embeddings (`all-MiniLM-L6-v2`, 384-dim) can be enabled via `SAG_ENABLE_ONNX_EMBEDDING=true` (benchmarked at 86.0% / 100Q — identical to token-set; default-off due to 4× RAM cost).
+
+## ⚙️ V3 retrieval mode (recommended)
+
+Current recommended enterprise path in this repository:
+
+1. **Keyword Swarm** (LLM keyword expansion + fallback query tokens)
+2. **Vector Index Search** (cosine similarity over token-set vectors from `knowledge/_vectors/`)
+3. **Dynamic Re-rank** on candidate set (department aware, R&C soft-penalty)
+4. **Final synthesis** on authorized context
+
+### Runtime settings
+
+Configure in **System Config → Retrieval architecture** (or env):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SAG_ENABLE_HYBRID` | `true` | Enable hybrid rerank pipeline |
+| `SAG_HYBRID_STRATEGY` | `dynamic_rerank` | `vector_plus_rerank` or `dynamic_rerank` |
+| `SAG_HYBRID_TOP_K` | `5` | Documents returned after rerank |
+| `SAG_HYBRID_ALPHA` | `0.65` | Lexical vs semantic weight in hybrid score |
+| `SAG_ENABLE_ONNX_EMBEDDING` | `false` | Enable ONNX dense embeddings (requires `sentence-transformers`) |
+
+Keyword cache: enabled by default (persisted to `cache/llm_keywords_cache.json`)
+
+## 📈 V3 operations and observability
+
+### Vector index
+
+V3 chunking/indexing writes to `knowledge/_vectors/`:
+
+| File | Content |
+|------|---------|
+| `_chunks.json` | All chunk metadata (740 chunks for demo vault) |
+| `_index.json` | Token-set vector index for cosine similarity search |
+
+### Keyword resilience
+
+The orchestrator supports synonym-assisted expansion via:
+
+- `config/domain_synonyms.json`
+
+This improves recall when user wording differs from policy vocabulary.
+
+### Retrieval trace logging
+
+Each request appends one JSON line to:
+
+- `logs/retrieval_trace.jsonl`
+
+Tracked fields include:
+
+- mode, role, scope, keyword count, source count
+- timing per stage: keyword generation, vector search, rerank, synthesis, total
+
+### Test reports
+
+- V2 baseline: `docs/TEST_REPORT_V2.md`
+- V3 vector pipeline: `docs/TEST_REPORT_V3.md`
+- Metadata schema: `docs/METADATA_SCHEMA.md`
+
+## 🧩 When to use SAG vs RAG vs Hybrid
+
+| Mode | Best for | Strengths | Trade-offs |
+| :--- | :--- | :--- | :--- |
+| **SAG only** (deterministic lexical + RBAC) | Policy-heavy enterprise docs, strict audit requirements | Predictable, explainable, RBAC-first, low drift | Lower semantic recall for loosely phrased questions |
+| **RAG only** (semantic/vector-first) | Broad semantic discovery, fuzzy knowledge exploration | High semantic recall, good for paraphrase-heavy queries | Harder governance/audit, potentially higher infra cost |
+| **Hybrid** (SAG V3 default) | Enterprise workloads needing both safety and recall | Subset ACL control + vector cosine similarity + dynamic rerank | Token-set cosine limited on short docs; ONNX embeddings pending |
 
 ## ⚡ 5-minute evaluator demo
 
@@ -154,7 +249,7 @@ You can download and run this project **without being the maintainer**.
 
 Tell anyone trying the demo the following:
 
-1. **There is no `knowledge/` vault inside the repo.** It is **gitignored** on purpose (**privacy policy** — see **Data Privacy & GitHub Policy** above). After `git clone` or unzipping, **you must supply Markdown yourself**: build **`knowledge/<Department>/`** to match **`config/org_structure.json`**, **or** copy from the repo’s **`demo_knowledge/`** into **`knowledge/`** as described in this README (**same folder names as department silos**).
+1. **There is no `knowledge/` vault inside the repo.** It is **gitignored** on purpose (**privacy policy** — see **Data Privacy & GitHub Policy** above). After `git clone` or unzipping, **you must supply Markdown yourself**: build **`knowledge/<Department>/`** to match **`config/org_structure.json`**, **or** copy from the repo's **`demo_knowledge/`** into **`knowledge/`** as described in this README (**same folder names as department silos**).
 
 2. **Automatic demo seed (optional):** If **`knowledge/`** has **no** `.md` files yet and **`demo_knowledge/`** exists next to the app, **`maybe_seed_demo_vault`** (`core/Utils.py`) may copy **`demo_knowledge/` → `knowledge/`** on startup. Create **`knowledge/.no_auto_demo`** to disable that behaviour.
 
@@ -205,11 +300,11 @@ For **Department Head (VP)** the app expands the allowed folder list **after** `
 4. `merge_ops_cross_access_subset` → `config/ops_head_cross_access.json`
 5. `merge_risk_silo_cross_access_subset` → `config/risk_silo_cross_access.json`
 
-Each step **appends** a silo folder name when the viewer’s active department is in that config’s merge list **and is not** the silo owner (no duplicate append). **CEO / CFO / CTO** paths that are already `ALL` or fixed lists **do not** use this merge chain.
+Each step **appends** a silo folder name when the viewer's active department is in that config's merge list **and is not** the silo owner (no duplicate append). **CEO / CFO / CTO** paths that are already `ALL` or fixed lists **do not** use this merge chain.
 
 **Search** still applies **`document_visible_to_viewer`** per file (whitelist, explicit deny, substring rules, Risk/HR/Ops extras, universal-read basenames, auditee audit-report lists, etc.).
 
-| If the Head’s active department is… | Extra silo merged in (when not already that silo) | Mechanism (high level) |
+| If the Head's active department is… | Extra silo merged in (when not already that silo) | Mechanism (high level) |
 |-------------------------------------|---------------------------------------------------|-------------------------|
 | Not **Credit & Loans** | **Credit & Loans** | Credit policy/strategy allowlists; Operations gets extra basenames per `credit_head_cross_access.json`. |
 | Not **HR & Admin** | **HR & Admin** | Whitelist + explicit deny (`hr_head_cross_access.json`). |
@@ -232,7 +327,7 @@ Each step **appends** a silo folder name when the viewer’s active department i
 
 ### Index & regression
 
-- After bulk changes under `knowledge/`, use **🛠️ System Config → Rebuild vault index & search cache** (`_SEARCH_CACHE.json`, `_MASTER_INDEX.md`).
+- After bulk changes under `knowledge/`, use **🛠️ System Config → Rebuild vault index & search cache** (builds `_SEARCH_CACHE.json`, `_MASTER_INDEX.md`, and vector index in `_vectors/`).
 - Example script for merge scope: `scripts/test_merge_cross_silo.py`.
 
 ---
@@ -255,13 +350,13 @@ Everything below uses defaults from `core/Utils.py`. Override paths with environ
 | Layer | Path (default) | Config key | What it is |
 | :--- | :--- | :--- | :--- |
 | **Raw** | `raw_data/` | `RAW_DATA_PATH` | Drop unstructured files here first. |
-| **Cleaned** | `knowledge/` | `CLEANED_DATA_PATH` | The **only** tree GURU indexes—your “cleaned data” vault (name can stay `knowledge/`). |
+| **Cleaned** | `knowledge/` | `CLEANED_DATA_PATH` | The **only** tree GURU indexes—your "cleaned data" vault (name can stay `knowledge/`). |
 
 **Automated pipeline (raw → cleaned)**  
 With Streamlit running, the **background monitor** watches `raw_data/`. **`DataRefinery`** calls your **LLM** to classify content, suggest a filename, and write **Markdown + YAML front matter** straight into **`knowledge/<Department>/`**. No second staging folder. **Obsidian does not run this step** and never receives raw drops.
 
 **Subset (who sees what)**  
-“Subset” is enforced at **query time** in Python: allowed **department folders** under `knowledge/`, using `config/org_structure.json` and the role you pick in the UI (`SearchWorker` / `RAGOrchestrator`). **Department Heads** additionally get **merged silos** and **per-file RBAC** as described in **§ Organization model**. **Obsidian does not split subsets.** Optionally open `knowledge/` in Obsidian **after** files exist to edit, link, or tag—folder names must still match silos.
+"Subset" is enforced at **query time** in Python: allowed **department folders** under `knowledge/`, using `config/org_structure.json` and the role you pick in the UI (`RAGOrchestrator`). **Department Heads** additionally get **merged silos** and **per-file RBAC** as described in **§ Organization model**. **Obsidian does not split subsets.** Optionally open `knowledge/` in Obsidian **after** files exist to edit, link, or tag—folder names must still match silos.
 
 | How `.md` gets into `knowledge/` | Details |
 | :--- | :--- |
@@ -370,7 +465,7 @@ Regardless of track, **GURU only reads the cleaned vault** (`CLEANED_DATA_PATH`,
 
 **5. Refresh indexes after bulk changes**
 
-After copying many files or changing paths, open **🛠️ System Config** → **Rebuild vault index & search cache** so `_SEARCH_CACHE.json` / `_MASTER_INDEX.md` stay accurate.
+After copying many files or changing paths, open **🛠️ System Config** → **Rebuild vault index & search cache** so `_SEARCH_CACHE.json`, `_MASTER_INDEX.md`, and the vector index in `_vectors/` stay accurate.
 
 **6. Query with GURU**
 
@@ -391,10 +486,10 @@ This is the intended "subset-first" operating pattern for the demo.
 
 ### 3) Production checklist
 
-Use when “trial data” becomes real content. This repo stays a PoC—you own security, deployment, and governance.
+Use when "trial data" becomes real content. This repo stays a PoC—you own security, deployment, and governance.
 
 1. **Secrets** — Store keys in **`config/.env`** (gitignored), a vault, or your cloud secret manager—never in git. Restrict OS permissions on that file. Rotate API keys per policy.
-2. **Vault matches the org model** — Keep **`knowledge/<Department>/`** folder names aligned with **`config/org_structure.json`**. Remember: **filesystem permissions** on those folders are the practical access boundary; sidebar “roles” only **simulate** RBAC inside the demo UI.
+2. **Vault matches the org model** — Keep **`knowledge/<Department>/`** folder names aligned with **`config/org_structure.json`**. Remember: **filesystem permissions** on those folders are the practical access boundary; sidebar "roles" only **simulate** RBAC inside the demo UI.
 3. **Ingestion governance** — Define who may write to **`raw_data/`**. Review **`DataRefinery`** output—the LLM can mis-label a department. After bulk imports or path changes, run **Rebuild vault index & search cache** (System Config). Optionally add a human QA step before treating new `.md` as authoritative.
 4. **Paths & hosting** — Set **Raw data** / **Knowledge vault** paths in **System Config** when the vault lives on another drive or share. Run Streamlit **locally**, **behind VPN**, or in a **container / VM** as appropriate; put a **reverse proxy + TLS** in front if exposing beyond localhost.
 5. **Monitoring** — Set **`LINE_NOTIFY_TOKEN`** and/or **`DISCORD_WEBHOOK_URL`** in `.env` if you rely on ops alerts from watchdog/monitor paths; verify notifications in lower environments first.
@@ -429,13 +524,14 @@ You do **not** need `config/.env` to open the UI—see **§2 step 3** above for 
 | **Packaging** | `Docker` + Compose | Optional reproducible runtime; bind-mount `knowledge/` and `raw_data/` from the host |
 | **Orchestration** | `Python 3.9+` (3.11 in Docker image) | Core control logic |
 | **Logic Layer** | `Gemini 2.5 Flash` (+ OpenAI / Anthropic optional in UI) | Query interpretation & response synthesis |
-| **Storage** | Markdown vault (`knowledge/`, Obsidian-compatible) | Distributed silos on disk |
+| **Vector Index** | Token-set cosine similarity (zero-dependency) | Document retrieval from chunked content |
+| **Storage** | Markdown vault (`knowledge/`, Obsidian-compatible) + `_vectors/` index | Distributed silos on disk |
 | **UI Framework** | `Streamlit` | Enterprise Guru dashboard |
 | **Resilience** | `Industrial Watchdog` | PID lock, auto-recovery, optional LINE/Discord alerts |
 
 ---
 
 **Built with respect for the craft.**
-*Architected by SAG Builder (Bangkok, Thailand).*
+*Architected by Vittaya (Bangkok, Thailand).*
 
 *PS: https://www.linkedin.com/in/vittaya-lertbuiasin-13b258149/*

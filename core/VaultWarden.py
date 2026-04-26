@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 from .Utils import CONFIG
 from .sources import build_knowledge_source
+from .VectorIndex import VectorIndex
 
 class VaultWarden:
     def __init__(self, vault_path=None):
@@ -41,6 +42,16 @@ class VaultWarden:
 
         self._write_master_index(index_data)
         self._write_search_cache(index_data)
+        try:
+            chunk_count, vector_count = VectorIndex(self.vault_path).build()
+            print(
+                f"🧩 Chunk/Vector index updated at: "
+                f"{os.path.join(self.vault_path, '_CHUNK_INDEX.json')} "
+                f"({chunk_count} chunks, {vector_count} vector-eligible)"
+            )
+        except Exception as exc:
+            # Keep V2 index path alive even if V3 indexing fails.
+            print(f"⚠️ V3 chunk/vector indexing skipped: {exc}")
         return index_data
 
     def _write_search_cache(self, data):

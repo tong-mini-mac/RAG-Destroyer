@@ -2,6 +2,7 @@ import os
 import re
 import json
 import frontmatter
+import time
 
 from .Utils import CONFIG, document_visible_to_viewer
 from .sources import build_knowledge_source
@@ -15,6 +16,8 @@ class SearchWorker:
             CONFIG.get("KNOWLEDGE_SOURCE_BACKEND", "localfs"),
             self.vault_path,
         )
+        self._last_cache_fresh_at: float = 0.0
+        self._cache_fresh_ttl_sec: int = 120
 
     def _count_md_under(self, subset: str) -> int:
         """Recursive .md count under vault_path/subset (matches VaultWarden rules)."""
@@ -26,14 +29,24 @@ class SearchWorker:
 
     def _cache_is_stale(self, cache_data: dict, allowed_subsets) -> bool:
         """If index on disk has far more docs than _SEARCH_CACHE.json, cache is stale — prefer slow walk."""
+        now = time.time()
+        if self._last_cache_fresh_at and (now - self._last_cache_fresh_at) < self._cache_fresh_ttl_sec:
+            return False
         nd_total = self._total_md_in_vault_departments()
         nc_total = sum(len(v) for v in cache_data.values() if isinstance(v, list))
         if allowed_subsets == "ALL":
-            if nd_total > 0 and (nc_total == 0 or nc_total < max(5, nd_total // 3)):
+            if nd_total == 0:
+                self._last_cache_fresh_at = now
+                return False
+            # Ratio-based rule: fallback only when cache misses a significant portion.
+            coverage = (nc_total / nd_total) if nd_total else 1.0
+            if nc_total == 0 or coverage < 0.70:
                 print(
-                    f"[SearchWorker] Cache incomplete for ALL scope (indexed~{nc_total} vs disk~{nd_total}). Using slow walk."
+                    f"[SearchWorker] Cache incomplete for ALL scope "
+                    f"(indexed~{nc_total} vs disk~{nd_total}, coverage={coverage:.2f}). Using slow walk."
                 )
                 return True
+            self._last_cache_fresh_at = now
             return False
         subs = allowed_subsets if isinstance(allowed_subsets, list) else [allowed_subsets]
         for subset in subs:
@@ -50,6 +63,7 @@ class SearchWorker:
             if nd > 15 and nc <= 3:
                 print(f"[SearchWorker] Cache out of date for '{subset}' (cache={nc} vs disk={nd}). Using slow walk.")
                 return True
+        self._last_cache_fresh_at = now
         return False
 
     def _filter_results_by_audience(
