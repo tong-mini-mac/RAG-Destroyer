@@ -2,50 +2,51 @@ import os
 import re
 import json
 import frontmatter
+import time
 
-from .Utils import document_visible_to_viewer
+from .Utils import CONFIG, document_visible_to_viewer
+from .sources import build_knowledge_source
 
 class SearchWorker:
     """A bot that searches for a specific keyword within an authorized subset of the vault."""
     
     def __init__(self, vault_path="knowledge"):
         self.vault_path = vault_path
+        self.source = build_knowledge_source(
+            CONFIG.get("KNOWLEDGE_SOURCE_BACKEND", "localfs"),
+            self.vault_path,
+        )
+        self._last_cache_fresh_at: float = 0.0
+        self._cache_fresh_ttl_sec: int = 120
 
     def _count_md_under(self, subset: str) -> int:
         """Recursive .md count under vault_path/subset (matches VaultWarden rules)."""
-        base = os.path.join(self.vault_path, subset)
-        if not os.path.isdir(base):
-            return 0
-        n = 0
-        for root, _, files in os.walk(base):
-            for fname in files:
-                if fname.endswith(".md") and not fname.startswith("_"):
-                    n += 1
-        return n
+        return sum(1 for _ in self.source.iter_markdown_files(subset))
 
     def _total_md_in_vault_departments(self) -> int:
         """Count .md under each top-level silo folder (not root files)."""
-        if not os.path.isdir(self.vault_path):
-            return 0
-        total = 0
-        for name in os.listdir(self.vault_path):
-            if name.startswith("_") or name.startswith("."):
-                continue
-            p = os.path.join(self.vault_path, name)
-            if os.path.isdir(p):
-                total += self._count_md_under(name)
-        return total
+        return sum(self._count_md_under(name) for name in self.source.list_departments())
 
     def _cache_is_stale(self, cache_data: dict, allowed_subsets) -> bool:
         """If index on disk has far more docs than _SEARCH_CACHE.json, cache is stale — prefer slow walk."""
+        now = time.time()
+        if self._last_cache_fresh_at and (now - self._last_cache_fresh_at) < self._cache_fresh_ttl_sec:
+            return False
         nd_total = self._total_md_in_vault_departments()
         nc_total = sum(len(v) for v in cache_data.values() if isinstance(v, list))
         if allowed_subsets == "ALL":
-            if nd_total > 0 and (nc_total == 0 or nc_total < max(5, nd_total // 3)):
+            if nd_total == 0:
+                self._last_cache_fresh_at = now
+                return False
+            # Ratio-based rule: fallback only when cache misses a significant portion.
+            coverage = (nc_total / nd_total) if nd_total else 1.0
+            if nc_total == 0 or coverage < 0.70:
                 print(
-                    f"[SearchWorker] Cache incomplete for ALL scope (indexed~{nc_total} vs disk~{nd_total}). Using slow walk."
+                    f"[SearchWorker] Cache incomplete for ALL scope "
+                    f"(indexed~{nc_total} vs disk~{nd_total}, coverage={coverage:.2f}). Using slow walk."
                 )
                 return True
+            self._last_cache_fresh_at = now
             return False
         subs = allowed_subsets if isinstance(allowed_subsets, list) else [allowed_subsets]
         for subset in subs:
@@ -62,6 +63,7 @@ class SearchWorker:
             if nd > 15 and nc <= 3:
                 print(f"[SearchWorker] Cache out of date for '{subset}' (cache={nc} vs disk={nd}). Using slow walk.")
                 return True
+        self._last_cache_fresh_at = now
         return False
 
     def _filter_results_by_audience(
@@ -107,7 +109,7 @@ class SearchWorker:
         results = []
         keyword = keyword.lower()
         
-        cache_path = os.path.join(self.vault_path, "_SEARCH_CACHE.json")
+        cache_path = self.source.cache_path()
         if not os.path.exists(cache_path):
             print("[SearchWorker] Cache not found. Running slow search...")
             return self._filter_results_by_audience(
@@ -128,14 +130,7 @@ class SearchWorker:
 
         # Determine actual subsets to search (ALL must union disk folders — cache may omit e.g. General)
         if allowed_subsets == "ALL":
-            disk_dirs = []
-            if os.path.isdir(self.vault_path):
-                for name in os.listdir(self.vault_path):
-                    if name.startswith("_") or name.startswith("."):
-                        continue
-                    pth = os.path.join(self.vault_path, name)
-                    if os.path.isdir(pth):
-                        disk_dirs.append(name)
+            disk_dirs = self.source.list_departments()
             target_subsets = sorted(set(cache_data.keys()) | set(disk_dirs))
         else:
             target_subsets = list(allowed_subsets)
@@ -178,46 +173,35 @@ class SearchWorker:
             return results
 
         if allowed_subsets == "ALL":
-            if not os.path.isdir(self.vault_path):
-                return results
-            target_subsets = [
-                d for d in os.listdir(self.vault_path)
-                if os.path.isdir(os.path.join(self.vault_path, d)) and not d.startswith("_")
-            ]
+            target_subsets = self.source.list_departments()
         else:
             target_subsets = list(allowed_subsets)
 
         for subset in target_subsets:
-            dept_dir = os.path.join(self.vault_path, subset)
-            if not os.path.isdir(dept_dir):
-                continue
-            for root, _, files in os.walk(dept_dir):
-                for file in files:
-                    if not file.endswith(".md") or file.startswith("_"):
-                        continue
-                    file_path = os.path.join(root, file)
-                    try:
-                        post = frontmatter.load(file_path)
-                    except Exception:
-                        continue
-                    title = (post.get("title") or file).lower()
-                    tags = str(post.get("tags", [])).lower()
-                    summary = (post.get("summary") or "").lower()
-                    relevance = 0
-                    if keyword in title:
-                        relevance += 10
-                    if keyword in tags:
-                        relevance += 5
-                    if keyword in summary:
-                        relevance += 3
-                    if relevance > 0:
-                        results.append({
-                            "path": file_path,
-                            "title": post.get("title", file),
-                            "relevance": relevance,
-                            "department": subset,
-                            "tags": post.get("tags", []),
-                            "summary": post.get("summary", ""),
-                            "doc_id": post.get("doc_id", "N/A"),
-                        })
+            for file_path in self.source.iter_markdown_files(subset):
+                file = os.path.basename(file_path)
+                try:
+                    post = frontmatter.load(file_path)
+                except Exception:
+                    continue
+                title = (post.get("title") or file).lower()
+                tags = str(post.get("tags", [])).lower()
+                summary = (post.get("summary") or "").lower()
+                relevance = 0
+                if keyword in title:
+                    relevance += 10
+                if keyword in tags:
+                    relevance += 5
+                if keyword in summary:
+                    relevance += 3
+                if relevance > 0:
+                    results.append({
+                        "path": file_path,
+                        "title": post.get("title", file),
+                        "relevance": relevance,
+                        "department": subset,
+                        "tags": post.get("tags", []),
+                        "summary": post.get("summary", ""),
+                        "doc_id": post.get("doc_id", "N/A"),
+                    })
         return results

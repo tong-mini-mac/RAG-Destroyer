@@ -1,0 +1,10 @@
+{
+  "welfare": ["benefits", "allowance", "compensation"],
+  "benefits": ["welfare", "allowance", "insurance"],
+  "salary": ["payroll", "compensation", "remuneration"],
+  "leave": ["vacation", "absence", "time off"],
+  "compliance": ["policy", "regulation", "control"],
+  "risk": ["exposure", "control", "mitigation"],
+  "loan": ["credit", "lending", "facility"],
+  "audit": ["review", "inspection", "assessment"]
+}
